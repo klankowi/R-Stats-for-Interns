@@ -1,0 +1,224 @@
+---
+title: "Non-parametric tests"
+output: html_notebook
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# Delete old data
+rm(list=ls())
+
+# Load packages, install nycflights13, rstatix, corrplot if you need to.
+library(tidyverse)
+library(nycflights13)
+library(here)
+library(rstatix)
+```
+
+## Real-world data problems
+So far, we have learned about and used statistical modeling and analysis techniques that rely on a mostly-shared set of assumptions. Normality of data distribution and equality of variance are common assumptions. These are called "parametric" methods. Unfortunately, data collection in environmental sciences rarely results in "pretty" data that meets all the assumptions of parametric methods. We commonly collect data that have some sort of non-normal skew, or unequal variance. 
+
+Luckily, statistical methods that relax assumptions of normality and equality of variance have been developed. These are called non-parametric methods, and you'll likely have to use them in your own research projects. In this lesson, we'll learn about non-parametric equivalents of Pearson's correlation, Student's t-test, and one-way ANOVA. 
+
+We'll go back to using the `flights` dataset from the `nycflights13` package. Let's load it and do some cursory data cleaning now. We'll also filter to just July because otherwise there are too many data points for simple exercises.
+
+```{r load-data}
+# Adapt flight dataset
+flights2 <- flights %>% 
+  # Save only variables that we want to use
+  select(carrier, origin, dest, dep_delay, arr_delay,
+         air_time, distance, month) %>% 
+  # Remove cancelled flights
+  na.omit() %>% 
+  # Filter to summer months
+  filter(month ==7) %>% 
+  # Change data type for carrier, origin, destination to factor
+  mutate_if(is.character, as.factor)
+
+# Determine which airports have fewer than 50 arrivals from NYC
+uncommon_airports <- flights2 %>% 
+  # Group by destination
+  group_by(dest) %>% 
+  # Summarise results: count number of arrivals to each destination
+  summarise(count = n()) %>% 
+  # Filter out airports with fewer than 50 arrivals from NYC
+  filter(count < 50) %>% 
+  # Remove count column
+  mutate(count = NULL) %>% 
+  # Convert to a vector
+  pull(dest) %>% 
+  # Remove levels that now have 0 samples
+  droplevels()
+
+# Determine which carriers have fewer than 50 departures from NYC
+uncommon_carriers <- flights2 %>% 
+  # Group by carrier
+  group_by(carrier) %>% 
+  # Summarize results: count number of times each carrier left NYC
+  summarise(count = n()) %>% 
+  # Filter out carriers with fewer than 50 total departures from NYC
+  filter(count < 50) %>% 
+  # Remove count column
+  mutate(count = NULL) %>% 
+  # Convert to a vector
+  pull(carrier) %>% 
+  # Remove levels that now have 0 samples
+  droplevels() 
+
+# Build negate function
+'%notin%' <- function(x,y)!('%in%'(x,y))
+# I like this function and use it a lot. It's not included in Base R.
+# This is the inverse of "must include," so you can think of it as "must not include"
+
+# Remove uncommon airports from dataset
+flights2 <- flights2 %>% 
+  filter(dest %notin% uncommon_airports)
+
+# Remove uncommon carriers from dataset
+flights2 <- flights2 %>% 
+  filter(carrier %notin% uncommon_carriers)
+
+# Drop levels with 0 samples
+flights2 <- droplevels(flights2)
+
+# View results
+summary(flights2)
+```
+
+I know from doing my own data explorations that these data have issues with meeting parametric assumptions of normality and equality of variance. We will now go through some exercises to learn how we can avoid these issues with nonparametric models.
+
+## Non-parametric version of Pearson's correlation: Spearman rank correlation
+Let's say we wanted to test the correlation between departure delay and arrival delay. Pearson's correlation assumes normal distributions of these two quantitaive variables. Let's check that.
+
+```{r pearson-assumptioncheck}
+hist(flights2$arr_delay)
+hist(flights2$dep_delay)
+```
+
+These are definitely not normal distributions. Notice how most of the data is contained on the left side of the plot, but there's a super long right-hand tail. Most flights arrive and depart on time, but a few flights have crazy long delays. This would be challenging to assess with Pearson's correlation, as the violation of the assumptions may give us misleading results. Let's use Spearman's rank correlation instead, which does not assume normality. Spearman rank correlation assesses the monotonic relationship between variables, rather than assessing linear relationships directly. This is cool because it also allows for the assessment of the strength of non-linear relationships-- Spearman's rank correlation just tells you the strength of increasing or decreasing trends between the two variables.
+
+```{r spearman}
+# Run spearman correlation
+flights2 %>% 
+  dplyr::select(dep_delay, arr_delay) %>% 
+  cor(method='spearman')
+
+# Plot data
+ggplot(data=flights2) +
+  geom_point(aes(x=dep_delay, y=arr_delay)) +
+  geom_smooth(aes(x=dep_delay, y=arr_delay), method='lm',
+              se=FALSE) +
+  labs(x='Departure Delay', y='Arrival Delay')
+```
+There is a strong positive relationship between departure delay time and arrival delay time. The Spearman rank correlation makes no assumptions about the linearity or normality of this relationship, just how strong the association is.
+
+## Non-parametric version of Student's t-test: Mann-Whitney U test
+Let's test if mean departure delay time is significantly different between Delta (DL) and American Airlines (AA) flights coming from LaGuardia. The parametric analysis that would be used for this question is a Student's t-test. However, this test assumes normal distribution within each of the two groups, no significant outliers in either group, and equality of variance between the two groups. We are unlikely to meet these conditions. Let's see.
+
+```{r student-assumptions}
+# Trim to NY airports
+lga.flights <- flights2 %>% 
+  filter(origin == 'LGA') %>% # Select for LaGuardia
+  filter(carrier %in% c('AA', 'DL'))
+
+# Identify outliers by group
+ny.outliers <- lga.flights %>% 
+  group_by(carrier) %>% 
+  identify_outliers(dep_delay)
+table(ny.outliers$carrier)
+# There are more than 200 outliers in each group
+table(ny.outliers$carrier[ny.outliers$is.extreme == TRUE])
+# And more than 150 outliers in each group should be considered extrme
+
+# Check for normality and outliers with boxplots
+ggplot(data=lga.flights) +
+  geom_boxplot(data=lga.flights, aes(y=dep_delay, x=carrier))
+
+# Check for normality with shapiro-wilk test
+lga.flights %>% 
+  group_by(carrier) %>% 
+  shapiro_test(dep_delay)
+# Normality not met
+
+# Check for equality of variance between groups
+lga.flights %>% 
+  levene_test(dep_delay ~ carrier)
+# Equality of variance not met
+
+# Do test anyway
+t.test(dep_delay ~ carrier, data=lga.flights)
+# Indicates significant difference
+```
+
+We have several violations of the assumptions and should not trust the outcome of our Student's t-test. Why? Because the means come from skewed distributions and likely do not reflect the true middle of either group, and also the difference in variance will mess up our comparisons of standard deviations to determine the 95% confidence interval for true difference in means between groups.
+
+Instead, we should use the Mann-Whitney U test, which tests for differences between the medians of two groups, and uses interquartile ranges to generate a 95% confidence interval for true difference in medians between groups. Because we are using medians and IQRs, we have a test that is more robust to errors that may arise from non-normal distributions or inequality of variances.
+
+The assumptions of a Mann-Whitney U test are that the distribution of data in both groups is similar in shape, that the data are independent (no repeated measures within or between groups), and that there are more than 5 observations in each group. We have enough information to confirm we meet these assumptions from the plots we have already made. Let's proceed with the test.
+
+```{r mann-whitney}
+# Run Mann-Whitney test
+wilcox.test(dep_delay ~ carrier, data=lga.flights)
+
+# Calculate median departure delay for each carrier
+lga.flights %>% 
+  group_by(carrier) %>% 
+  summarise(median.delay = median(dep_delay))
+```
+
+The text output gives us the Wilcoxon W-statistic (which is why R calls this a Wilcoxon test), which is the lowest sum of ranks neede dto calculate the p-value. It also gives us the p-value, which is calculated with a continuity correction to deal with the non-normal distributions. The p-value here is very small, much lower than the threshold alpha value (0.05) to say with 95% confidence that there is a difference. The results indicate that is a significant difference in median departure delay time for Delta and American Airlines flights out of LaGuardia. We calculated median departure delay per group and found that American gets people out the door a median of 3 minutes earlier than their schedule departure time, but Delta only gets people out the door a median of 1 minute earlier than scheduled. We can report that American flights are significantly less delayed than Delta flights.
+
+## Non-parametric version of ANOVA: Kruskal-Wallis tests
+If we wanted to test the difference in means between three or more groups, we'd use an Analysis of Variance (ANOVA) test. The assumptions of this test are independence of data, no significant outliers, normality of residuals OR many samples (>30 per group), and equality of variance between groups. There is a good chance that if we wanted to test for differences in departure delay between the three New York area airports, we would fail to meet the outlier and equality of variance assumptions. Let's give it a look.
+
+```{r anova-assumptions}
+# Identify outliers by group
+ua.outliers <- flights2 %>% 
+  group_by(origin) %>% 
+  identify_outliers(dep_delay)
+table(ua.outliers$origin)
+# There are 50-475 outliers in each group
+table(ua.outliers$origin[ua.outliers$is.extreme == TRUE])
+# And 40-250 in each group should be considered extrme
+
+# Check for normality and outliers with boxplots
+ggplot(data=flights2) +
+  geom_boxplot(data=flights2, aes(y=dep_delay, x=origin))
+# Normality is not a huge issue because there are so many (>5000) samples per group
+# The outliers are a problem though.
+
+# Check for equality of variance between groups
+flights2 %>% 
+  levene_test(dep_delay ~ origin)
+# Equality of variance not met
+
+# Do test anyway
+summary(aov(dep_delay ~ origin, data=flights2))
+# Indicates significant difference, but vulnerable to error!
+```
+Yep, we have problems! There are many significant outliers in each group, and variance is not equal across groups. We should select a non-parametric method to run this analysis. The non-parametric alternative to ANOVA is a Kruskal-Wallis test. The only assumptions needed for a Kruskal-Wallis test are that the samples are random and mutually independent. We already know that we are not using the same flight multiple times. We can proceed with the test.
+
+```{r kruskalwallis}
+# Run K-W test
+kruskal.test(flights2$dep_delay,
+             flights2$origin)
+```
+
+The p-value indicates that at least one pairwise comparison of our three airports has significantly different mean delay time. We need to run a post-hoc test to determine which pairs have different means. For data meeting parametric assumptions, we used a Tukey HSD test to do this. For non-parametric data, we will use the Dunn test.
+
+```{r dunntest}
+agricolae::kruskal(y=flights2$dep_delay, 
+                        trt=flights2$origin, 
+                        alpha=0.05, 
+                        p.adj='bonferroni', 
+                        group=TRUE,
+                        console=TRUE)
+```
+
+It looks like all three airports have mean departure delays that are significantly different to each other. We can check the `groups` column of our Dunn test outcome to confirm-- all three airports have different letters, which indicates they are different from each other. If, for example, JFK and LaGuardia were both labelled "b", this would mean that their mean departure delay times were not significantly different to each other.
+
+Because Kruskal-Wallis tests do not need to meet the assumptions of normality and equality of variance like ANOVA, we can now certify these results. LaGuardia has the shortest mean departure delay time, Newark's delay time is significantly longer than LaGuardia but also significantly shorter than JFK, and JFK has significantly longer departure delay times than both Newark and LaGuardia.
+
+## Wrapup
+In this lesson, we learned about various non-parametric alternatives to the parametric tests we have learned. We should expect to use these tests when addressing messy, real-world data. Please take these concepts to your own data. Before you do anything else, you should always explore your data and visualize it to see if there are any obvious problems or patterns to address.

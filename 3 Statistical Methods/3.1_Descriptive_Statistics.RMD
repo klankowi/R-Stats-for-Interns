@@ -1,0 +1,151 @@
+---
+title: "Descriptive Statistics"
+author: "Katie Lankowicz"
+output: html_notebook
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# Libraries
+library(tidyverse)
+library(here)
+```
+
+## Descriptive statistics
+So, you have a lot of data and you can load it into R. Now what? You need to be able to understand and interpret your data to answer any hypotheses or research questions you may have. Typically, the first thing you should do is run some descriptive statistics. These include measures of central tendency, spread, and variability-- things like mean, median, standard deviation, inter-quartile range, minimum, and maximum values. 
+
+We will practice calculating descriptive statistics on a dataset called `credit`, which is a prediction of monthly credit card balance for 400 people based on a number of quantitative and categorical variables. It's hosted online for free, so we don't have to mess around with me emailing you files, setting a working directory, or using GitHub today. Begin by calling the data and taking a peek at what's inside.
+
+```{r loadcredit}
+# Call credit dataset from website that hosts it
+credit <- read.csv("http://bit.ly/33a5A8P")
+
+# View contents-- this is an alternative to the head() or tail() functions.
+glimpse(credit)
+```
+
+#### Sidebar: catching data errors
+Right away, I can see an issue in this datset. Look closely at the first few entries in the Gender category. See how there's a space before the M in Male? If you don't catch this and fix it early, it can be a massive headache. Again, R cannot understand things that are "mostly" right. If you didn't know there was a space here and tried to subset the data into "Male" and "Female" instead of " Male" and "Female," it wouldn't know what to do. Let's fix this error now by reassigning the levels of the gender category.
+
+```{r error-sidebar}
+credit$Gender[credit$Gender == ' Male'] <- 'Male'
+
+glimpse(credit)
+```
+
+Great. We have removed that pesky space for now.
+
+### Types of data
+We have a lot of data here. Let's talk about types of data. First, we have categorical variables. These are things like "Gender" or "Ethnicity." The examples we have of categorical data in this dataset are all _nominal categorical variables_, which means they have no clear order. The other type of categorical data is _ordinal categorical_, in which there are set levels. An example of an ordinal categorical variable would be if you binned our "Credit Rating" category into low, medium, and high levels. There's information held in the order for ordinal categorical variables-- you know that someone in the "high" credit rating category has a better credit score than someone in the "low" credit rating category. For categorical variables, like gender, there is no order.
+
+We also have numeric variables. These are things like "Income" and "Balance." Numeric variables can be either continuous or discrete. _Continuous numeric variables_ can assume any value between two numbers-- think of temperature. If you had the best thermometer in the world, you could get down to like 10000 decimal places and exactly pinpoint how hot it is. _Discrete numeric variables_ can only take on specific numeric values. The number of crabs we have in a single trap is discrete, as a crab either exists or doesn't. Most of the numeric variables we have in this dataset are best described as discrete, as most currency systems in the world only count down to 0.01 unit, and credit ratings typically only are given as whole numbers. We don't have 0.000001 cent, nor do we have a credit rating of 500.023234. 
+
+Now that we understand what we have in this dataset, let's trim it down so it only includes the variables we want to use.
+
+```{r trimming}
+# Use the "select" function to pull out the variables we want
+newcredit <- select(credit, Balance, Limit, Income, Age, Gender)
+
+# Examine contents
+glimpse(newcredit)
+
+# I really hate when variables (column names) are in capital letters.
+# Let's make them all lower case so they're easier to type.
+colnames(newcredit) <- tolower(colnames(newcredit))
+
+```
+
+### Measures of center and spread
+Great. Now, let's run some descriptive statistics to see what Income (a discrete numeric variable) looks like by gender (a nominal categorical variable). Please note that Income is reported as thousands of dollars, so earning \$1,000 a year will be reported as 1 and earning \$100,000 per year will be reported as 100.
+
+Side note: when you're in the R Markdown document (NOT the html notebook output), do you notice how I put a backslash before the dollar sign in \$1000? That's because R understands the dollar sign as an operator, which is a symbol that has been assigned a specific function. If we want it to just show up as itself in these text narratives, we need to explain to R that it is not being used as an operator here. The backslash does this for us.
+
+We'll use some new functions from the `dplyr` package. You may have noticed that we did not directly load the `dplyr` package from our library. It is actually contained within the `tidyverse` package, which is a collection of commonly-used data handling and visualization packages. We save a few lines of code by loading `tidyverse` instead of `dplyr` AND `ggplot2` AND `maggitr`, etc.
+
+```{r incomebygender}
+# Determine number of respondents by gender
+table(newcredit$gender)
+
+# Group data by gender and calculate mean, median, and range.
+newcredit %>% 
+  group_by(gender) %>% 
+  summarise(mean_income = mean(income),
+            median_income = median(income),
+            min_income = min(income),
+            max_income = max(income),
+            range = max(income) - min(income),
+            q1 = quantile(income, 0.25),
+            q3 = quantile(income, 0.75),
+            iqr = quantile(income, 0.75) - quantile(income, 0.25))
+
+```
+
+Let's talk about this code a little bit. You'll see the weird percent sign symbol thing. This is called a "pipe." It's essentially a way to group and order a number of functions that you will be running on the same dataset. In language, it is equivalent to a conjunction like "AND" or "BUT." We could totally write this code as three to five separate lines, but using the pipe functionality makes it a little more intuitive to understand what we are doing-- grouping income by gender, then calculating mean, median, and range for each group. The output is still essentially a dataframe (called a "tibble"). If you don't like using pipes, you don't have to use them in your own code.
+
+Anyway, the table of results gives us a lot of information. It looks like males, based on both mean and median, earn a little more than females. Mean and median are both measures of central tendency, or where the average falls. Measures of central tendency explain where we would expect to see a random datapoint taken out of the larger dataset. 
+
+The 1st and 3rd quartiles (q1 and q3, respectively) for income are closer together for females than males, resulting in a smaller interquartile range for females. However, the range of possible incomes is wider for females than males, and both the total minimum and total maximum income within the dataset are both for females. It looks like most women earn an income somewhere within a fairly tight range of 21.9 thousand dollars to 57.2 thousand dollars, but there may be several outliers on either end earning far less or far more than the average. These are all measures of spread, which tell us about the distribution of values around the mean.
+
+### Visualizations
+All this information would be easier to understand if we visualized it, so let's do that. Once again, we'll rely on piping, `dplyr`, and `ggplot`.
+
+```{r incomevis}
+# Basic histogram of income regardless of gender
+hist(newcredit$income)
+
+# Group income by gender and create a histogram to show data spread
+newcredit %>% 
+  group_by(gender) %>% 
+  ggplot() +
+    geom_histogram(aes(x=income),
+                   breaks=c(seq(10, 190, 10))) +
+    facet_wrap(~gender)
+
+# Group income by gender and create a boxplot to show data spread
+newcredit %>% 
+  #group_by(gender) %>% 
+  ggplot() +
+    geom_boxplot(aes(y=income)) +
+    facet_wrap(~gender)
+
+```
+
+The histogram takes our possible range of incomes, organizes them into equal-sized "bins" of discrete values, and then shows us the number of respondents who earned an income within each bin. We set our bins using the "breaks" argument, so we know that each bin has a width of 10 thousand dollars. We also know that our minimum salary for any gender is about 10 thousand dollars and the maximum salary for any gender is about 190 thousand dollars. You can see that one male earned between 180 and 190 thousand dollars on the histogram. You can also see that both histograms are what we would call right-skewed. This means the right tail is much longer than it should be. Most people earn low salaries, but there are at least a few people that earn much higher salaries than the average.
+
+The boxplot (or box-and-whisker plot) also shows us the center and spread of our data, but does a slightly better job of visualizing the center of the data and showing us any outliers. You can see the black line in the middle of the box-- this is the median income per gender. You can also see lots of black dots at the top end of each whisker-- these are outliers, or people who earn much more than the average for their gender. Let's calculate our quantiles by hand and look at these outliers in the female category.
+
+```{r outliers}
+# Rule of thumb for finding outliers-- less than 1.5 Interquartile range from
+# quartile 1 (bottom of box) or more than 1.5 interquartile range from quartile 3
+# (top of box)
+
+# Calculate female IQR
+fem.cred <- newcredit %>% 
+  filter(gender=="Female") %>% 
+  summarise(q1 = quantile(income, 0.25),
+            q3 = quantile(income, 0.75),
+            iqr = q3-q1,
+            lower = q1 - (1.5 * iqr),
+            upper = q3 + (1.5 * iqr))
+
+fem.cred
+
+# Filter data to look at female outliers
+newcredit %>% 
+  filter(gender=="Female") %>% 
+  filter(income < fem.cred$lower | income > fem.cred$upper)
+```
+
+So, out of our 207 female respondents, 15 are outliers. This may be important to us later, when we move into analysis.
+
+This is the end of the descriptive statistics section. We will save both the coding progress we've made AND the output of that code (the stuff currently in the environment). This is actually a really easy process. You can save everything in your environment using the function save.image(), which will put all objects in your environment into an .RDATA file. You just have to choose the name of that file.
+
+```{r save-results}
+save.image(here('descriptive_stats_results.RData'))
+```
+
+Check your working directory-- you should have a new .RDATA file called "descriptive_stats_results."
+
+## Wrapup
+In this lesson, we learned about types of data, how to describe the center and spread of data, and how to visualize the center and spread of data. Please take these concepts to your own data. Before you do anything else, you should always explore your data and visualize it to see if there are any obvious problems or patterns to address.

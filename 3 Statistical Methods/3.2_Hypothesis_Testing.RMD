@@ -1,0 +1,189 @@
+---
+title: "Hypothesis Testing"
+author: "Katie Lankowicz"
+output: html_notebook
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# Libraries
+library(tidyverse)
+library(here)
+```
+
+## Population vs. sample
+Last lesson, we learned about descriptive statistics: types of data, measures of central tendency, and spread. These are great ways to initially explore our data, but we can't use them to generalize beyond the data at hand. In this lesson, we'll get into inferential statistics, which are ways to describe the features of a population from a sample.
+
+In most sub-fields of science, we collect information on a sample of a population and use it to understand the entire population. We do this because it is not often possible in the natural world to take data from every member of a population. You can think of it this way-- if you want to know the flavor of a cake, you don't need to eat the whole cake. You can take a slice and eat that to determine the flavor. Sure, there's a possibility that the baker made some kind of "gotcha" cake where only one slice is chocolate and the rest is vanilla, but you can be reasonably confident that your slice is representative of the whole cake. It would be unreasonable to eat the whole cake if you just wanted to know what flavor it is. In this example, the slice is the "sample" and the entire cake is the "population." 
+
+You may find yourself thinking, why are we so confident that we can draw conclusions on a whole population when we only sample a portion of it? Our conclusions are reliant on a few concepts. The first requirement is that the samples are random and representative. If samples are not random and representative, we could skew our results. If we wanted to know the average human height, we wouldn't get a realistic result if we restricted ourselves to only sample men from the Netherlands (who are known to be much taller than average human height). We'd have to cast a wider net with a true random sample.
+
+The other concept underpinning probability theory is the Central Limit Theorem. The central limit theorem states that if we draw multiple samples of size _n_ from a population, then calculate the mean of each sample and plot it in a histogram, the distribution of the histogram will be approximately normal (shaped like a bell curve). The predictability of this relationship is very useful and helps us to accurately estimate the mean of a population without having to take data from every member of that population. We just need to make sure we have a sufficient sample size _n_, which is typically 30 or more observations.
+
+Think about our credit data. We only have 400 people represented, not the millions of people who have credit cards. So what we have is a sample of the greater population. We have to assume that the sample is random and representative of the whole population, because we have no information on how it was collected. But! *Just for now, and for the purposes of learning, we will pretend that these are the only 400 people in the world with credit cards.* We will now sample our 400-person population to figure out what the average credit balance of the population is, regardless of gender. Let's start by randomly sampling 50 people out of our 400 total. We'll first "set a seed" so that our computers do random generation in the same order. If we did not do this, our computers would do random generation in a random order and we would get different results.
+
+```{r sampling}
+# Load the results from the descriptive statistics lesson
+load(here('descriptive_stats_results.RData'))
+
+# Set seed - for other purposes, you can put any number in here. 
+# For now, stick with 123 so we all have matching random generations.
+set.seed(123)
+
+# Sample 50 people's credit card balance
+samp.1 <- sample(newcredit$balance, 50)
+
+# Calculate mean balance of sample
+mean(samp.1)
+
+# Calculate mean balance of population, compare
+mean(newcredit$balance)
+
+```
+
+Because we set a seed, we should all have the same random sample of the population. Notice that our sample has a mean balance below what the population at large has. Let's do another sample.
+
+```{r sampling2}
+# You don't need to set a seed again. It's a once-per-session thing.
+
+# Sample 50 more credit balances
+samp.2 <- sample(newcredit$balance, 50)
+
+# Calculate mean balance of sample
+mean(samp.2)
+```
+
+Wow look, that's a much different value. Because we drew 50 people again randomly, we didn't get the same 50 people as the first time, and therefore the mean value was different. This helps us understand how much variability we can get when sampling from a bigger population. The distribution of sample means is called the sampling distribution, and is a measure of this variability. Let's generate 5000 samples of size 50 from the population, calculate the mean of each sample, and visualize the result.
+
+```{r samplingvariability}
+# Create blank vector which we will save results in
+sample_means <- rep(NA, 5000)
+
+# Use a loop function to draw 5000 random samples from our population
+for(i in 1:5000){
+  samp <- sample(newcredit$balance, 50)
+  sample_means[i] <- mean(samp)
+}
+
+# Create histogram
+hist(sample_means)
+
+```
+
+Let's talk about this code. You just used a for loop! We used that loop to run 5000 iterations of the same command--sample. That would have taken so long by hand, but by utilizing the loop it only takes a second. For loops work by indexing. In this case, _i_ is our index. We are telling R to randomly sample our population 5000 times, and that our starting index value is 1. Then, we run through the loop for each index value _i_ between 1 and 5000. We save our results to our blank vector-- it has 5000 spaces in it and also uses indexing. So in loop 561, we sample for the 561st time and save to space number 561 in our vector.
+
+Back to sampling distribution. We now have 5000 estimates of MEAN CREDIT BALANCE. This will tell us a lot about estimating the average balance of the whole population. Sample mean is an unbiased estimator, and will be centered at the true mean balance of the population. Here, it looks like the mean balance is somewhere between \$500 and \$550. The spread of the data indicates how much variability is induced by sampling only 50 credit balances. As a proof of concept, let's calculate mean credit balance for our whole 400-person population.
+
+```{r balance}
+mean(newcredit$balance)
+mean(sample_means)
+```
+
+If these are the only 400 people in the world with credit cards, we can calculate a population mean balance of \$520.02. The mean of our 5000 samples of 50 people is \$519.67, which is much closer to the true population mean than any single sample would be.
+
+## Hypothesis testing
+Now, let's move on to some inferential statistics. *We'll go back to reality, which is knowing that way more than 400 people on earth have credit cards.* We will treat our dataset as a sample, not as the population. And we will use our sample to address a research question: does the population of males have a significantly different average credit balance than the population of females? The process we will use to address this question is called hypothesis testing.
+
+### The null hypothesis
+Let's talk about hypothesis testing. We need to define both a null hypothesis and an alternative hypothesis. These have to be contradictory. The null hypothesis proposes no statistical significance exists in a set of observations. In this case, the null hypothesis is that males and females do not have different average balances. The alternative hypothesis proposes whatever outcome is against the stated null hypothesis. In this case, the alternative hypothesis is that there IS a different average balance between males and females. We will test our sample distributions against each other using a set confidence level to determine whether the null or alternative hypothesis is more likely to be true. It is important to note that we cannot ever "prove" a null hypothesis. Instead, we "fail to reject" it, which simply means that we do not have enough evidence to accept the alternative hypothesis.
+
+### Types of error
+There are four possible outcomes of a hypothesis test. Ideally, you'd want to correctly determine if the null hypothesis is true or false. However, it is also possible to reject the null hypothesis when it is true (called Type I error) or fail to reject the null hypothesis when it is false (called Type II error). Type I and Type II errors occur with a particular probability, called $\alpha$ for Type I and $\beta$ for Type II. The probability of a Type I error is predetermined by our set significance level (usually we want a 95% confidence rating, so we allow for a 5% chance of committing a Type I error). The probability of a Type II error can be calculated if we know the population mean, population variance, and the number of samples. In the real world, we don't normally have access to a whole population to calculate true mean and variance, we only have access to a small portion of the population and can only calculate sample mean and variance. The easiest way to make sure you have a low incidence of Type II error is to have a large sample size.
+
+### Assumptions
+We need to check that we have enough samples before continuing. Typically, to do inferential stats we need at least 30 samples per group. We also need to check for outliers, as outliers will affect the sample mean and variance.
+
+Please install the `statsr` package before continuing. Click into the console (NOT the text editor) and type `install.packages("statsr")`. 
+
+```{r samplenumber}
+# Check number of balance samples per gender
+by(newcredit$balance, newcredit$gender, length)
+
+# Check for outliers using boxplot
+boxplot(balance ~ gender, data=newcredit)
+```
+
+This looks pretty decent. We have more than 30 samples per category and we do not appear to have any outliers. 
+
+### Comparing means of two independent groups
+We will now address our hypothesis using a function called `inference` from the `statsr` package. The function will construct a confidence interval for the entire population based on our sample population, then test our hypothesis using Student's t-test. You should be familiar with a t-test: it is a way of testing for significant differences between means. There are three types of t-tests:  
+
+* One-sample: comparing the mean of one group against the mean of the entire population
+* Paired sample: comparing the means of two measurements taken from the same individuals
+* Independent two-sample: comparing the means of two independent groups.
+
+The most appropriate test for us is the independent two-sample t-test, as we do not know the mean credit balance for all men and women on earth, nor are the measurements repeated (taken from the same individual over time). Let's talk about what we need to run this code. The `t.test` function has many arguments. First, we define our input variables. Balance is the response variable, so it is assigned to be the y-variable in our formula. Gender is the explanatory variable, so it is assigned to be the x-variable in our formula. All data come from our newcredit object, which we have been using this whole time. We use a two-sided test, because we did not specify whether male average balance had to be higher or lower than female average balance. Our confidence level is 95%, which is very common in environmental statistics. This means we want to be 95% sure that our sample values are also true for the population values. Why not a higher value? Well, we can never be 100% sure of the population mean based on our sample mean-- what if some random outlier person out there has a balance of $999,999,999?? Also, the higher we go with our confidence interval, the lower our precision gets. Think about it this way. If I wanted to guess the temperature in Harpswell, Maine with 99% confidence on any day of the year, I'd say the temperature would be between -5 degrees F and 95 degrees F. That's a huge range. If I wanted to guess the temperature with 95% confidence, I could narrow that range significantly to be 40 degrees F to 80 degrees F.
+
+Finally, we specify that we are testing if the difference in means between male and female balance (mu) is 0.
+
+```{r t-test}
+t.test(formula = balance ~ gender,
+       data=newcredit,
+       alternative="two.sided",
+       conf.level=0.95,
+       mu=0)
+```
+
+We get quite a lot of text as an output. R indicates that we have run a Welch Two Sample t-test. This is an adaptation of Student's t-test, and it performs better than Student's t-test when the two groups have unequal sample sizes. We then get a text representation of our formula (balance by gender), the t-statistic, degrees of freedom, and p-value of the outcome.The t-statistic is the ratio of departure of the estimated value of a parameter from its hypothesized value to its standard error. In other words, it's a likelihood of if your value is extreme compared to the population mean. Larger t-statistics are evidence that your value is significantly different from the average. You won't want to calculate this by hand, as it's super tedious. Degrees of freedom here are the number of samples in the smallest group minus 1. You can actually do a rough calculation of the p-value given the t-stat and the degrees of freedom, but that's also super tedious. So let's just move right on to the p-value.
+
+The p-value gives us the likelihood that you would obtain your results or more extreme results assuming that the null hypothesis is true. In other words, if we took another 207 women and 193 men with credit cards, how likely is it that their average credit card balances would be the same? Low p-values indicate a low likeihood, which indicates that our results do not support the null hypothesis. High p-values indicate a high likelihood, which indicates that our results DO support the null hypothesis.
+
+Here, the p-value is given as 0.66. Recall that our confidence level was set to 0.95. This means that to indicate that there is enough evidence to reject the null hypothesis of no difference between male and female credit balance, the p-value has to be less than (1-0.95 =) 0.05. We are way above that value, so we fail to reject the null hypothesis. Average credit balance for all men and women with credit cards is likely the same.
+
+R then reiterates the alternative hypothesis. It also gives us the 95% confidence interval for the true difference in means between male and female credit balance: -110 to 70. This means the average male balance for the entire population of males could be anywhere from \$110 less to \$70 more than that of the average female balance for the entire population of females. 
+
+Finally, R gives us the mean balance of the sample of males and females. Note that these are SAMPLE MEANS, and we cannot be sure if they accurately represent the average balance of the POPULATION of males or females.
+
+We can get a visual representation of all this information using the `inference` package:
+
+```{r inf-package}
+statsr::inference(y=balance, x=gender, data=newcredit,
+                  statistic= "mean",
+                  type="ht",
+                  null=0,
+                  alternative="twosided",
+                  method="theoretical",
+                  conf_level = 0.95
+                  #order=c("female", "male")
+                  )
+```
+
+There are two parts to this output. First is a chunk of text, which gives us the same information as the Welch's t-test (with some minor inconsistencies because statsr uses Student's t-test instead of Welch's). 
+
+The other part of the output is plots. These tell us the same thing as the text. The blue plots visualize credit balance by gender, with the thick vertical blue lines indicating mean balance. The red plot is the inference plot. The curve here is a normal distribution of results expected from our population. The red shaded portions are results similar or more extreme than ours. The thick red line is where our results stand. The entire area under the curve here is 1, and if we ran some calculus we could figure out that the area within the red shading is equal to 0.66. This is another way to visualize our p-value and overall results-- that male and female credit balances are not significantly different in the worldwide population.
+
+### Generating confidence intervals
+Now, what if we want to generate 95% confidence intervals around the sample means for each group to better identify the likely population means of each group? We can accomplish this using the `statsr` package, too. First, let's split our dataset into two separate datasets: one for men, one for women.
+
+```{r split-data}
+men <- newcredit %>% 
+  filter(gender == 'Male')
+
+women <- newcredit %>% 
+  filter(gender == 'Female')
+
+```
+
+Next, we will use the `inference()` function to generate 95% confidence intervals using quantiles generated from a Student t distribution. 
+
+```{r conf-intervals}
+statsr::inference(balance,
+                  data=men,
+                  statistic= "mean",
+                  type="ci",
+                  method="theoretical",
+                  show_eda_plot = FALSE)
+
+statsr::inference(balance,
+                  data=women,
+                  statistic= "mean",
+                  type="ci",
+                  method="theoretical",
+                  show_eda_plot = FALSE)
+```
+
+We can now say with 95% certainty that the credit balance of all men (the entire male population of earth) with a credit card is between \$444.19 and \$575.41. For women, we know with 95% certainty that the population credit balance is somewhere between \$466.71 and \$592.36.
+
+## Wrapup
+In this lesson, we learned about sampling distributions, hypothesis testing, confidence intervals, and comparing the means of two populations. Please take these concepts to your own data. Before you do anything else, you should always explore your data and visualize it to see if there are any obvious problems or patterns to address.

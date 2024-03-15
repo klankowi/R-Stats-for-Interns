@@ -1,0 +1,151 @@
+---
+title: "Intro to RMarkdown"
+author: "Katie Lankowicz"
+output: html_notebook
+---
+
+```{r setup, include=FALSE}
+# Set options for all chunks - show code
+knitr::opts_chunk$set(echo = TRUE)
+
+
+# Clear old data
+rm(list=ls())
+
+# Load libraries
+library(here)
+library(tidyverse)
+```
+
+## R Markdown
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. It's much easier to write and read reports that combine narrative, code, and plots in this format than in basic R scripts. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+We will be using R Markdown to write HTML notebooks, which do not require installation of any other software. 
+
+### HTML Notebooks
+When we were only working in R scripts, we needed to "comment out" (add a # to the beginning of) every line that was not a function or command for R to run. Otherwise, R would assume that your notes and narrative were code it was supposed to evaluate. R Markdown is different in that it allows you to better integrate narrative (like this paragraph) into a document. Obviously, this makes writing reports and documenting your analytic process much easier. R Markdown is really flexibile and allows you to convert your code into Microsoft Word, PDF, or HTML notebook documents. We will be using HTML notebooks because they are simple and do not require any extra software. See the next section if you'd like to learn how to create a PDF document (we won't directly cover this information but I can answer questions).
+
+You can create a fresh HTML notebook by clicking on the top left icon in your toolbar (looks like a blank piece of paper with a green plus sign), then clicking "R notebook." You'll get a new tab in your source pane called "Untitled 1." Notice the header right at the top. It has a space for the title of the document and the type of output it will produce. In that fresh notebook and in this current notebook, the output type is html_notebook.
+
+The cool thing about these notebooks is that it creates the document as soon as you hit save. The bad thing is that you have to remember to re-run all your code before you save the final version, or else it will not capture the output. More on that later.
+
+### Integrating narrative and code in an HTML notebook
+You can embed an R code chunk like this:
+
+```{r cars}
+# cars is a pre-generated dataset in R commonly used for introductory instruction.
+summary(cars)
+```
+
+Look very closely at the way the code chunk is written in the text editor. Everything is important here. You need three _accent_ signs, the squiggly brackets, and _r_ written to begin a code chunk, then you end the code chunk with a second set of _accent_ signs. The code chunk also has the word _cars_, this is simply the name of the chunk. You should name chunks something that indicates their purpose.
+
+If you want a code chunk to accomplish a task but DO NOT want the actual code to be repeated in the compiled report, you can use the following syntax:
+
+```{r hidecode, echo=FALSE}
+# Neither this line of text nor the command "summary(cars)" will appear in the document.
+summary(cars)
+```
+
+If you wrote a code chunk that you do not think you actually need to run, but want to keep just in case, use the following syntax to suppress the evaluation of the chunk:
+
+```{r donotrun, eval=FALSE}
+summary(cars)
+```
+
+You can use both _echo_ and _eval_ for a single chunk to essentially make it disappear from all output.
+
+```{r hideentirely, echo=FALSE, eval=FALSE}
+summary(cars)
+```
+
+## Loading data
+Loading data occurs the same way in RMarkdown as it does for regular R scripts. We will be working with data from the Behavioral Risk Factor Surveillance System (BRFSS), which is an annual telephone survey of 350,000 people in the United States. Respondents are asked about their diet and physical activity, HIV/AIDs status, tobacco use, and healthcare coverage. We will use a random sample of 20,000 people pulled from this dataset. I have pulled it from the internet and provided it to you as a csv.
+
+```{r loaddata}
+cdc <- read.csv(here("cdc.csv"))
+
+# Can't get this to load? Check your working directory and where your here() root starts.
+getwd()
+here()
+```
+
+## Summaries
+Let's go over some of the concepts we learned about last lesson, starting with a brief summary of the data.
+
+```{r datasummary}
+# Top 6 lines of the dataframe
+head(cdc)
+
+# Mean, median, and variance of weight
+mean(cdc$weight)
+median(cdc$weight)
+var(cdc$weight)
+
+```
+
+## Tables
+We can determine the number of respondents who smoke using a table, like this. In this dataset, 0 represents non-smokers and 1 represents smokers.
+
+```{r smokertable}
+table(cdc$smoke100)
+```
+
+Let's say we want to look at the proportion of smokers to non-smokers. This would be equal to dividing the number of smokers by the population size (20,000 respondents) and the number of non-smokers by the population size. 
+
+```{r relfreq}
+table(cdc$smoke100) / nrow(cdc)
+```
+
+If we want to show the breakdown of smokers by gender, we can make a two-way table.
+```{r twoway-table}
+table(cdc$gender, cdc$smoke100)
+```
+
+## Plots
+We can turn this information into a barplot. RMarkdown is a great tool for data visualization. It easily embeds plots into your output.
+```{r barplot}
+barplot(table(cdc$smoke100))
+```
+
+Let's visualize the relationship between gender and smoking. This would make for a great mosaic plot, in which we can check the relative frequency of a dependent variable (smoking) among different categories of an independent variable (gender)
+```{r mosaicplot}
+mosaicplot(table(cdc$gender, cdc$smoke100))
+```
+
+## Quantitative data
+
+So far, we have worked on categorical data (gender, yes or no to smoking). Let's dig in to some quantitative stuff. We can make box-and-whisker plots using the quantitative data of respondent height.
+
+```{r boxplots}
+boxplot(cdc$height)
+```
+
+We can break this into categories, as well.
+
+```{r boxplot-gender}
+boxplot(cdc$height ~ cdc$gender)
+```
+
+We can also make a histogram of respondent height
+```{r histogram}
+hist(cdc$height)
+```
+
+Or a scatterplot of respondent height vs. weight
+```{r scatterplot}
+plot(cdc$height, cdc$weight)
+```
+
+## Saving and getting output
+Once you're done editing the markdown document, make sure you click Run (top left of this pane), then click Run All. Alternatively, the keyboard shortcut for this is Ctrl+Alt+R (PC) / Command+Option+R (Mac). Once all code chunks have run, hit save. IF YOU DO NOT RUN THE CODE CHUNKS BEFORE SAVING, OUTPUT WILL NOT BE REPRESENTED IN THE FINAL DOCUMENT. Try it to see what I mean. As soon as you have run your code and hit save, R will automatically generate an HTML document in your working directory. You can open it from there and it should start up in your internet browser of choice. Alternatively, you can check what your output will look like by clicking on "Preview" in the toolbar of this pane.
+
+### Bonus content: PDFs
+You can also use R Markdown to generate PDFs of your work in R. To make this work, you need to download a separate software called MikTeX (PC)/ MacTeX (Mac). This separate software includes all typesetting and font information your computer needs to be able to write a PDF from R. Please follow the instructions here:
+<https://webpages.uidaho.edu/~renaes/419/Handouts/R%20markdown%20prep.pdf>.
+
+Unfortunately, the makers of the MacTeX package have opted to force you to pre-install thousands of fonts and typesetting features that you'll probably never use. I recommend installing the lite version of MacTeX instead, called BasicTeX. Please follow the instructions here for BasicTeX:
+<https://tug.org/mactex/morepackages.html>.
+
+After installation of MikTeX / MacTeX / BasicTeX, you may need to restart your RStudio session and/or your computer. Please do so and return to this document.
+
+When all software has been installed, you can change the output option in the header to be pdf_document. Then, you should be able to click the **Knit** button on the toolbar on top of this panel and automatically generate a PDF that includes the written content as well as the output of any embedded R code chunks within the document. 

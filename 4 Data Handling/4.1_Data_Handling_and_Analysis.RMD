@@ -1,0 +1,190 @@
+---
+title: "Real data Handling and Analysis"
+author: "Katie Lankowicz"
+output: html_notebook
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      message = FALSE,
+                      warning = FALSE)
+
+# Load packages
+library(here)
+library(tidyverse)
+library(sf)
+library(rstatix)
+```
+
+## CBASS Data
+So far, we've mostly played around with curated "pretty" data. These data make teaching statistics and R easy, but do not represent the reality of data collected in the real world. I have almost never been able to plug data I have collected into simple parametric (and sometimes even non-parametric) statistical models. The real world is complicated and messy! Let's see what that looks like using an example you're all now familiar with: CBASS seining data.
+
+CBASS data from the 2014-2022 sampling seasons out of Portland have been cleaned and integrated by me before this lesson. This is a pain in the ass all on its own, but we'll skip it so we can jump right in to modeling and analysis. The first step in this process is cross-referencing between dataframes; CBASS contains multiple types of information, all of which are kept in separate files. This is common practice for surveys that produce lots of different information. NOAA field survey data storage procedures were the template on which we built the CBASS data storage system.
+
+In this case, there are three important files which contain the majority of our information. `trips_cleaned.csv` contains all time and environmental data about each net haul. `abundance_cleaned.csv` contains the total number of each species collected at each net haul. And `bio_inf_cleaned.csv` contains biological information about the <=25 individuals of each species subsampled for length and sex in each net haul. 
+
+### Loading data
+Before we do anything else, we need to load the three dataframes.
+
+```{r dataloading}
+trips <- read.csv(here('trips_cleaned.csv'))
+head(trips,3)
+
+abund <- read.csv(here('abundance_cleaned.csv'))
+head(abund,3)
+
+bio <- read.csv(here('bio_inf_cleaned.csv'))
+head(bio,3)
+```
+
+### Using data from multiple dataframes
+The way we cross-reference and merge dataframes will vary depending on the question we'd like to answer. It always helps to think about the data we'll need to address a question, and then think about what variables can be used as an identifier for that information.
+
+Let's do an example. Our example question is: does substrate type affect the catch of green crabs in our seine survey? The data we'll need are:
+
+* Number of crabs at each net haul (hosted in `abund` dataframe)
+* Substrate type at each net haul (hosted in `trips` dataframe)
+
+Now, let's think about how we would merge these pieces of information when they exist in different dataframes. Luckily, each net haul has been assigned a unique identifying number (called `loc_id`). This identifier is used in both the `trips` and `abund` dataframes. We can use `loc_id` as a way to merge information from both dataframes. This will be done below.
+
+```{r merging}
+# First, select only necessary variables from the abundance dataframe
+gc.abund <-        select(abund,         # The name of the dataframe
+                          loc_id,        # Our identifier
+                          species_name,  # The species caught
+                          catch)         # The number caught of that species)
+
+# Next, we will select only necessary variables from the trips dataframe
+gc.trips <-        select(trips,        # The name of the dataframe
+                          loc_id,       # Our identifier
+                          substrate)    # The substrate type
+
+# Now, we can merge these two dataframes
+greencrabs <- merge(gc.trips, gc.abund, by='loc_id')
+head(greencrabs)
+```
+
+We now have a dataframe that tells us the number of each species caught in each net haul AND the type of substrate at that net haul. You'll notice we have every species represented in this dataframe. We only care about green crabs for this question, though, so we can subset the dataframe so it removes all other species.
+
+```{r subsetting}
+# Subset dataframe so it only has crabs
+greencrabs <- subset(greencrabs,                    # Name of dataframe
+                     species_name == 'green crab') # Subsetting rule
+
+# Check that there are only crabs in this dataframe
+table(greencrabs$species_name)
+
+# Check the different types of substrate possible
+table(greencrabs$substrate)
+
+# Check the number of crabs caught
+summary(greencrabs$catch)
+```
+
+We have accomplished the main task, merging data from different dataframes. Let's keep going. We can see that crabs were caught over nine types of substrate. Some of these have very few observations; for example, only one crab was caught over a substrate type called `sand/mud/gravel`. It might be beneficial for us to simplify possible substrate types to only consist of gravel, mud, and sand. We can make these changes in our dataframe.
+
+```{r simplify-variables}
+# There are quicker ways to do this, but for learning purposes we will be really simple.
+# We will instruct R to change the unwanted variable name to a wanted variable name.
+greencrabs$substrate[greencrabs$substrate == 'mud/gravel'] <- 'mud'
+table(greencrabs$substrate)
+# Now all instance of 'mud/gravel' have been replaced with just 'mud'
+
+# Repeat for other unwanted variable names
+greencrabs$substrate[greencrabs$substrate == 'mud/sand'] <- 'mud'
+greencrabs$substrate[greencrabs$substrate == 'mud/shell'] <- 'mud'
+greencrabs$substrate[greencrabs$substrate == 'sand/gravel'] <- 'sand'
+greencrabs$substrate[greencrabs$substrate == 'sand/mud/gravel'] <- 'sand'
+greencrabs$substrate[greencrabs$substrate == 'sand/shell'] <- 'sand'
+
+# Convert character-type data to factor-type
+greencrabs$substrate <- as.factor(greencrabs$substrate)
+
+# Check results
+summary(greencrabs$substrate)
+
+# There are 214 records that do not have a recorded substrate type. 
+# We can probably fill these in with information from other sampling days at the
+# same locations, but for now we will remove them.
+greencrabs <- subset(greencrabs,          # Dataframe name
+                     !is.na(substrate))   # Remove NA values (! means "not")
+
+# View results
+table(greencrabs$substrate)
+```
+
+### Hypothesize
+Consider our research question: does substrate type affect the catch of green crabs in our seine survey? We should develop our null and alternative hypotheses now. The null hypothesis states there is no significant relationship between the things you're testing. The alternative hypothesis has to be contradictory. In this case, let's say the alternative hypothesis is that there is a difference in green crab catch among the three substrate types. We will not specify that the difference has to be greater or lesser between any particular groups.
+
+### Statistical tests
+We can now check the distribution of green crabs caught among the different substrate types. This can be done with a table, but is probably easier to understand as a figure. A boxplot would work well here, as we are comparing a quantitative variable among different levels of a categorical variable.
+
+```{r boxpot}
+# Visualize catch per substrate type with boxplot
+ggplot(data=greencrabs) +
+  geom_boxplot(data=greencrabs, aes(y=catch, x=substrate))
+
+```
+
+Visually, it looks like substrate may have an effect on the number of green crabs caught at a site. We can do a statistical test to get a more robust answer. Because we have a categorical explanatory variable with more than 2 levels and a numeric response variable we should select ANOVA as our testing method, which tests whether samples from different categorical groups all come from the same distribution. Essentially, we'd use it to test if there is a difference in mean crab catch for each of our three substrate types.
+
+#### Checking assumptions
+Before we proceed, we need to consider the assumptions of ANOVA. ANOVA assumes normal population distribution (OR more than 30 samples per group), equal variance between groups, no significant outliers in any group, and independence between groups. It also helps to have about the same number of samples within each group. We can assume for now that the data are independent, because we did one net haul at each site about every two weeks. But we already know that outliers are a problem from the boxplots.
+
+We know that the number of samples at each type of substrate is unbalanced from our earlier tables. It also looks a lot like the distribution of catch is non-normal for each substrate type, and that variance may not be equal across groups. Let's test.
+
+```{r anova-assumptions}
+# Identify outliers by group
+gc.outliers <- greencrabs %>% 
+  group_by(substrate) %>% 
+  identify_outliers(catch)
+table(gc.outliers$substrate)
+# There outliers in the mud and sand groups
+table(gc.outliers$substrate[gc.outliers$is.extreme == TRUE])
+# And 1 mud and 5 sand observations are extreme outliers
+# Normality is not met and is likely an issue, there are only 12 observations in the gravel group.
+
+# Check for equality of variance between groups
+greencrabs %>% 
+  levene_test(catch ~ substrate)
+# Equality of variance can be assumed
+```
+
+#### Selecting a test
+At this point, we have three major problems to address before continuing. First, we do not have equal sample sizes. There are 12 samples in gravel substrate, 51 in mud substrate, and 79 in sand substrate. This is probably an accurate representation of the frequency of substrate types in Casco Bay, but it makes comparison between substrates difficult. The other issues are the non-normality of distributions and the presence of significant outliers. 
+
+If we had more than 30 samples in a group, we probably could have dropped the outliers or log-transformed the data and selected an ANOVA as our statistical test. However, the unbalanced sample sizes between the groups do not support making this decision. Instead, we will keep all the data as it is and use a non-parametric test. The non-parametric equivalent of ANOVA is called Kruskal-Wallis, and it relaxes the assumption of normality and equal variance. It still requires independence of the data.
+
+The null hypothesis of the Kruskal-Wallis test is equal means of all groups. The alternative hypothesis is that at least two groups have means that are statistically different. If the p-value is greater than 0.05, we fail to reject the null hypothesis and can assume that the mean response of all groups is statistically the same. If the p-value is less than 0.05, we reject the null hypothesis and can assume that the groups have different means.
+
+```{r kruskal-wallis}
+kruskal.test(greencrabs$catch ~ greencrabs$substrate)
+```
+
+#### Interpreting results
+The resulting p-value is less than 0.05, which means at least two of our three groups have statistically different means. The Kruskal-Wallis test does not tell us which groups have different means. For that, we need to use a Dunn test of multiple comparisons. You will need to install a new package called `dunn.test`. Do not do package installations in RMarkdown documents like this. Instead, click over to your console (bottom left) and type in \texttt{install.packages("dunn.test")}. Then proceed with this code chunk.
+
+```{r dunntest}
+rstatix::dunn_test(data = greencrabs,               # Data source
+          formula = catch ~ substrate,     # Comparison formula
+          p.adjust.method  = "bonferroni", # p-adjustment for multiple comparisons
+          detailed = TRUE
+)
+```
+
+There is a statistically-significant difference in means between the gravel and sand group. The difference in means between the gravel and mud groups is not statistically significant, nor is the difference between the mud and sand groups. This result is illustrated by the last column, `p.adj.signif`.
+
+### Drawing conclusions
+We have now gone through the process of developing a research question, determining the data we need to address that question, manipulating the data to a format we can use in R, checking assumptions for statistical tests, selecting a test, and executing that test. Now, we can talk about our findings.
+
+Sampling site substrate seems to have an effect on the number of crabs caught. We found that mean crab catch was significantly different when comparing gravel and sand sites, with catch at sand sites being much higher. There was no statistically significant difference between the catch of crabs at gravel and mud or mud and sand sites, though typically fewer crabs were caught at mud sites than sand sites.
+
+### Connecting results to ecological drivers
+At this point in a scientific article or report, we'd talk about why we think we got this result. This was mostly meant to be an example on data handling and selecting a statistical method, so I'll keep the discussion brief. The most straightforward answer may be that the net is less efficient at capturing crabs on rockier substrate. The bottom may snag or roll over rocks, allowing an opportunity for crabs to scuttle out from underneath. 
+
+The other possible answer may lie in the effect of different substrates on the abundance and distribution of green crabs. Green crabs burrow in sediment to camouflage themselves from predators. This is less possible in substrate with lots of gravel. Green crabs are generalist feeders, and can eat plants, gastropods, bivalves, amphipods, polychaetes, and other crustaceans (including smaller green crabs). We have no evidence to prove it in this study, but it's possible that food availability and/or camouflage ability is better in sandy or muddy habitats rather than gravel. This would make soft-bottom habitats more suitable for crabs, and we may expect to see them at higher densities in these areas.
+
+At any rate, the result is supported both by our statistical tests and what is generally known about green crab behavior and distribution.
+
+## Wrap up
+In this lesson, we basically did a miniature version of what you should expect to accomplish in your summer research project. We took a question, 
